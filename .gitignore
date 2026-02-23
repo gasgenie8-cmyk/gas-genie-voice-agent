@@ -1,0 +1,26 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Temp
+.tmp
+
+# OS
+.DS_Store
+
+# Agent
+.agent/
+.agents/
+.gemini/
+findings.md
+progress.md
+task_plan.md
+gemini.md
+tsconfig.tsbuildinfo
