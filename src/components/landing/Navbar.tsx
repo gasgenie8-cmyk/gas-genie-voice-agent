@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, Flame, LogOut } from 'lucide-react';
+import { Menu, X, Flame, LogOut, MessageSquare, Camera, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const Navbar = () => {
@@ -13,6 +13,13 @@ const Navbar = () => {
         navigate('/');
         setIsOpen(false);
     };
+
+    const authLinks = [
+        { to: '/voice', label: 'Talk to Genie', primary: true },
+        { to: '/history', label: 'History', icon: MessageSquare },
+        { to: '/photos', label: 'Photos', icon: Camera },
+        { to: '/profile', label: 'Profile', icon: User },
+    ];
 
     return (
         <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
@@ -33,26 +40,28 @@ const Navbar = () => {
                     </a>
                     {user ? (
                         <>
-                            <Link
-                                to="/voice"
-                                className="bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors"
-                            >
-                                Talk to Genie
-                            </Link>
+                            {authLinks.map((link) => (
+                                <Link
+                                    key={link.to}
+                                    to={link.to}
+                                    className={link.primary
+                                        ? "bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors"
+                                        : "flex items-center gap-1.5 text-sm text-foreground/60 hover:text-foreground transition-colors"}
+                                >
+                                    {link.icon && <link.icon size={15} />}
+                                    {link.label}
+                                </Link>
+                            ))}
                             <button
                                 onClick={handleSignOut}
                                 className="flex items-center gap-1.5 text-sm text-foreground/50 hover:text-foreground transition-colors"
                             >
-                                <LogOut size={16} />
-                                Sign Out
+                                <LogOut size={15} />
                             </button>
                         </>
                     ) : (
                         <>
-                            <Link
-                                to="/login"
-                                className="text-sm text-foreground/60 hover:text-foreground transition-colors font-medium"
-                            >
+                            <Link to="/login" className="text-sm text-foreground/60 hover:text-foreground transition-colors font-medium">
                                 Sign In
                             </Link>
                             <Link
@@ -66,55 +75,48 @@ const Navbar = () => {
                 </div>
 
                 {/* Mobile Toggle */}
-                <button
-                    onClick={() => setIsOpen(!isOpen)}
-                    className="md:hidden text-foreground/70"
-                >
+                <button onClick={() => setIsOpen(!isOpen)} className="md:hidden text-foreground/70">
                     {isOpen ? <X size={24} /> : <Menu size={24} />}
                 </button>
             </div>
 
             {/* Mobile Menu */}
             {isOpen && (
-                <div className="md:hidden px-6 pb-4 space-y-3 animate-fade-in">
-                    <a
-                        href="#how-it-works"
-                        onClick={() => setIsOpen(false)}
-                        className="block text-sm text-foreground/60 hover:text-foreground transition-colors"
-                    >
+                <div className="md:hidden px-6 pb-4 space-y-2 animate-fade-in">
+                    <a href="#how-it-works" onClick={() => setIsOpen(false)}
+                        className="block text-sm text-foreground/60 hover:text-foreground transition-colors py-2">
                         How It Works
                     </a>
                     {user ? (
                         <>
-                            <Link
-                                to="/voice"
-                                onClick={() => setIsOpen(false)}
-                                className="block w-full text-center bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors"
-                            >
-                                Talk to Genie
-                            </Link>
+                            {authLinks.map((link) => (
+                                <Link
+                                    key={link.to}
+                                    to={link.to}
+                                    onClick={() => setIsOpen(false)}
+                                    className={link.primary
+                                        ? "block w-full text-center bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors"
+                                        : "flex items-center gap-2 text-sm text-foreground/60 hover:text-foreground transition-colors py-2"}
+                                >
+                                    {link.icon && <link.icon size={16} />}
+                                    {link.label}
+                                </Link>
+                            ))}
                             <button
                                 onClick={handleSignOut}
-                                className="flex items-center justify-center gap-1.5 w-full text-sm text-foreground/50 hover:text-foreground transition-colors py-2"
+                                className="flex items-center gap-2 w-full text-sm text-foreground/50 hover:text-foreground transition-colors py-2"
                             >
-                                <LogOut size={16} />
-                                Sign Out
+                                <LogOut size={16} /> Sign Out
                             </button>
                         </>
                     ) : (
                         <>
-                            <Link
-                                to="/login"
-                                onClick={() => setIsOpen(false)}
-                                className="block w-full text-center border border-border text-foreground/70 hover:text-foreground text-sm font-medium px-5 py-2.5 rounded-xl transition-colors"
-                            >
+                            <Link to="/login" onClick={() => setIsOpen(false)}
+                                className="block w-full text-center border border-border text-foreground/70 text-sm font-medium px-5 py-2.5 rounded-xl transition-colors">
                                 Sign In
                             </Link>
-                            <Link
-                                to="/signup"
-                                onClick={() => setIsOpen(false)}
-                                className="block w-full text-center bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors"
-                            >
+                            <Link to="/signup" onClick={() => setIsOpen(false)}
+                                className="block w-full text-center bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
                                 Get Started
                             </Link>
                         </>

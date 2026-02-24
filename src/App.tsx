@@ -5,6 +5,9 @@ import Index from './pages/Index';
 import VoiceSession from './pages/VoiceSession';
 import Login from './pages/Login';
 import SignUp from './pages/SignUp';
+import History from './pages/History';
+import Photos from './pages/Photos';
+import Profile from './pages/Profile';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 
@@ -16,9 +19,16 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<SignUp />} />
                 <Route path="/voice" element={
-                    <ProtectedRoute>
-                        <VoiceSession />
-                    </ProtectedRoute>
+                    <ProtectedRoute><VoiceSession /></ProtectedRoute>
+                } />
+                <Route path="/history" element={
+                    <ProtectedRoute><History /></ProtectedRoute>
+                } />
+                <Route path="/photos" element={
+                    <ProtectedRoute><Photos /></ProtectedRoute>
+                } />
+                <Route path="/profile" element={
+                    <ProtectedRoute><Profile /></ProtectedRoute>
                 } />
                 <Route path="/admin" element={<AdminLogin />} />
                 <Route path="/admin/dashboard" element={<AdminDashboard />} />

@@ -1,8 +1,10 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mic, MicOff, ArrowLeft, Loader2 } from 'lucide-react';
 import { useVapiVoice } from '../hooks/useVapiVoice';
 import { useToast } from '../hooks/useToast';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import ToastContainer from '../components/ui/ToastContainer';
 
 const VAPI_ASSISTANT_ID = 'bbbf30c3-e0c0-4223-a5d2-27741dc2dc86';
@@ -10,12 +12,35 @@ const VAPI_ASSISTANT_ID = 'bbbf30c3-e0c0-4223-a5d2-27741dc2dc86';
 const VoiceSession = () => {
     const navigate = useNavigate();
     const { toasts, toast, dismiss } = useToast();
+    const { user } = useAuth();
     const transcriptEndRef = useRef<HTMLDivElement>(null);
+    const callStartRef = useRef<number>(0);
+    const [saving, setSaving] = useState(false);
+
+    const saveTranscript = useCallback(async (transcriptData: { role: string; text: string; isFinal: boolean; timestamp: number }[]) => {
+        if (!user || transcriptData.length === 0) return;
+        setSaving(true);
+        const finalEntries = transcriptData.filter(t => t.isFinal && t.text.trim());
+        const duration = callStartRef.current ? Math.round((Date.now() - callStartRef.current) / 1000) : null;
+        const summaryParts = finalEntries.slice(0, 3).map(t => t.text.slice(0, 50));
+        const summary = summaryParts.join(' | ').slice(0, 200) || null;
+
+        await supabase.from('conversation_transcripts').insert({
+            user_id: user.id,
+            started_at: new Date(callStartRef.current || Date.now()).toISOString(),
+            ended_at: new Date().toISOString(),
+            duration_seconds: duration,
+            transcript: finalEntries.map(t => ({ role: t.role, text: t.text, timestamp: t.timestamp })),
+            summary,
+        });
+        setSaving(false);
+    }, [user]);
 
     const { status, isActive, transcript, toggleCall, endCall } = useVapiVoice({
         assistantId: VAPI_ASSISTANT_ID,
         onCallEnd: () => {
-            toast({ title: 'Call Ended', description: 'Voice session completed.' });
+            saveTranscript(transcript);
+            toast({ title: 'Call Ended', description: 'Voice session saved.' });
         },
         onError: (error) => {
             toast({
@@ -23,6 +48,9 @@ const VoiceSession = () => {
                 description: error.message || 'Connection interrupted. Tap the mic to reconnect.',
                 variant: 'destructive',
             });
+        },
+        onStatusChange: (newStatus) => {
+            if (newStatus === 'active') callStartRef.current = Date.now();
         },
     });
 
@@ -112,12 +140,12 @@ const VoiceSession = () => {
             {/* Status + Mic Button */}
             <div className="flex flex-col items-center gap-4 px-6 py-8 border-t border-border">
                 <p className="text-sm text-foreground/60 font-medium">
-                    {statusLabel[status] ?? 'Ready'}
+                    {saving ? 'Saving transcript...' : statusLabel[status] ?? 'Ready'}
                 </p>
 
                 <button
                     onClick={handleToggle}
-                    disabled={status === 'ending'}
+                    disabled={status === 'ending' || saving}
                     className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300
             ${isActive
                             ? 'bg-destructive hover:bg-destructive/80 animate-pulse-glow shadow-[0_0_30px_rgba(239,68,68,0.4)]'
