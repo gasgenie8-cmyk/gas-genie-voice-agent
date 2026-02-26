@@ -14,12 +14,47 @@ body {
   color: #F1F5F9;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Prevent pull-to-refresh bounce in standalone PWA */
+  overscroll-behavior-y: contain;
+  /* Remove tap highlight on mobile */
+  -webkit-tap-highlight-color: transparent;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: 'Outfit', sans-serif;
 }
 
+/* Safe area utilities for notch devices */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Smooth scrolling for app feel */
+.app-layout {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Mobile-optimised touch targets */
+@media (max-width: 768px) {
+
+  button,
+  a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -35,4 +70,11 @@ h1, h2, h3, h4, h5, h6 {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
+}
+
+/* Standalone mode — hide browser-specific elements */
+@media all and (display-mode: standalone) {
+  body {
+    overscroll-behavior: none;
+  }
 }

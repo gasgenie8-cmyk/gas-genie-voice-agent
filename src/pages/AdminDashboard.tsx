@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, Clock, Users, Activity, LogOut, ArrowLeft, Briefcase, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
 
 interface DashboardStats {
     totalCalls: number;
@@ -48,38 +49,36 @@ const AdminDashboard = () => {
     const fetchData = async () => {
         try {
             // Calls data
-            const { data: callsData } = await supabase
-                .from('voice_calls')
-                .select('*')
-                .order('started_at', { ascending: false })
-                .limit(50);
-
-            const allCalls = callsData ?? [];
+            const callsSnap = await getDocs(
+                query(collection(db, 'voiceCalls'), orderBy('started_at', 'desc'), limit(50))
+            );
+            const allCalls = callsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as CallLog[];
             const today = new Date().toISOString().split('T')[0];
             const totalMinutes = allCalls.reduce((sum, c) => sum + (c.duration_seconds ?? 0), 0) / 60;
-            const uniqueUsers = new Set(allCalls.map((c) => c.user_id).filter(Boolean));
+            const uniqueUsers = new Set(allCalls.map((c) => (c as Record<string, string>).user_id).filter(Boolean));
             const callsToday = allCalls.filter((c) => c.started_at?.startsWith(today)).length;
 
             setStats({ totalCalls: allCalls.length, totalMinutes: Math.round(totalMinutes), activeUsers: uniqueUsers.size, callsToday });
             setCalls(allCalls);
 
             // Job status breakdown
-            const { data: jobs } = await supabase.from('jobs').select('status');
-            if (jobs) {
+            const jobsSnap = await getDocs(collection(db, 'jobs'));
+            const jobs = jobsSnap.docs.map(d => d.data());
+            if (jobs.length > 0) {
                 const counts: Record<string, number> = {};
-                jobs.forEach((j) => { const s = j.status || 'Pending'; counts[s] = (counts[s] || 0) + 1; });
+                jobs.forEach((j) => { const s = (j.status as string) || 'Pending'; counts[s] = (counts[s] || 0) + 1; });
                 setJobStatuses(Object.entries(counts).map(([status, count]) => ({ status, count })));
             }
 
             // Daily jobs (last 7 days)
             const weekAgo = new Date();
             weekAgo.setDate(weekAgo.getDate() - 7);
-            const { data: recentJobs } = await supabase
-                .from('jobs')
-                .select('created_at')
-                .gte('created_at', weekAgo.toISOString());
+            const recentJobsSnap = await getDocs(
+                query(collection(db, 'jobs'), where('created_at', '>=', weekAgo.toISOString()))
+            );
+            const recentJobs = recentJobsSnap.docs.map(d => d.data());
 
-            if (recentJobs) {
+            if (recentJobs.length > 0) {
                 const daily: Record<string, number> = {};
                 for (let i = 6; i >= 0; i--) {
                     const d = new Date();
@@ -87,15 +86,15 @@ const AdminDashboard = () => {
                     daily[d.toISOString().split('T')[0]] = 0;
                 }
                 recentJobs.forEach((j) => {
-                    const d = j.created_at?.split('T')[0];
+                    const d = (j.created_at as string)?.split('T')[0];
                     if (d && daily[d] !== undefined) daily[d]++;
                 });
                 setDailyJobs(Object.entries(daily).map(([date, count]) => ({ date, count })));
             }
 
             // Engineers
-            const { data: profiles } = await supabase.from('profiles').select('display_name, role');
-            setEngineers(profiles ?? []);
+            const profilesSnap = await getDocs(collection(db, 'profiles'));
+            setEngineers(profilesSnap.docs.map(d => d.data() as { display_name: string; role: string }));
         } catch (err) {
             console.error('[AdminDashboard:fetchData]', err);
         } finally {
@@ -284,9 +283,9 @@ const AdminDashboard = () => {
                                             <td className="px-6 py-4 text-foreground/80 font-mono">{formatDuration(call.duration_seconds)}</td>
                                             <td className="px-6 py-4">
                                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${call.status === 'completed' ? 'bg-success/10 text-success'
-                                                        : call.status === 'active' ? 'bg-primary/10 text-primary'
-                                                            : call.status === 'failed' ? 'bg-destructive/10 text-destructive'
-                                                                : 'bg-muted text-foreground/50'
+                                                    : call.status === 'active' ? 'bg-primary/10 text-primary'
+                                                        : call.status === 'failed' ? 'bg-destructive/10 text-destructive'
+                                                            : 'bg-muted text-foreground/50'
                                                     }`}>
                                                     <span className="w-1.5 h-1.5 rounded-full bg-current" />
                                                     {call.status}

@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Camera, Upload, X, Image as ImageIcon, Loader2, Trash2, HardDrive, AlertTriangle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db, storage } from '../lib/firebase';
+import { collection, query, orderBy, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage';
 import { useAuth } from '../context/AuthContext';
 
 const STORAGE_LIMIT_MB = 1024; // 1 GB free tier
@@ -33,45 +35,38 @@ const Photos = () => {
     const [viewPhoto, setViewPhoto] = useState<Photo | null>(null);
     const [description, setDescription] = useState('');
     const [deleting, setDeleting] = useState<string | null>(null);
-    const [storage, setStorage] = useState<StorageInfo>({ usedMB: 0, percentage: 0, isNearFull: false });
+    const [storageInfo, setStorageInfo] = useState<StorageInfo>({ usedMB: 0, percentage: 0, isNearFull: false });
     const [cleanupRunning, setCleanupRunning] = useState(false);
 
     // Fetch photos and calculate storage
     const fetchPhotos = useCallback(async () => {
         if (!user) return;
-        const { data } = await supabase
-            .from('job_photos')
-            .select('*')
-            .order('uploaded_at', { ascending: false });
-        setPhotos(data ?? []);
+        const snap = await getDocs(
+            query(collection(db, 'jobPhotos'), orderBy('uploaded_at', 'desc'))
+        );
+        setPhotos(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Photo[]);
         setLoading(false);
         await calculateStorage();
     }, [user]);
 
     const calculateStorage = async () => {
-        // List all files in the bucket to sum their sizes
-        const { data: files } = await supabase.storage.from('job-photos').list('', {
-            limit: 1000,
-            sortBy: { column: 'created_at', order: 'asc' },
-        });
-
-        if (!files) { setStorage({ usedMB: 0, percentage: 0, isNearFull: false }); return; }
-
-        // List files in each user folder
-        let totalBytes = 0;
-        const folders = files.filter(f => !f.metadata); // folders have no metadata
-        for (const folder of folders) {
-            const { data: userFiles } = await supabase.storage.from('job-photos').list(folder.name, { limit: 1000 });
-            if (userFiles) {
-                totalBytes += userFiles.reduce((sum, f) => sum + (f.metadata?.size || 0), 0);
+        try {
+            const storageRef = ref(storage, 'job-photos');
+            const result = await listAll(storageRef);
+            // Count items (prefixes are subdirectories)
+            let totalItems = result.items.length;
+            for (const prefix of result.prefixes) {
+                const subResult = await listAll(prefix);
+                totalItems += subResult.items.length;
             }
+            // Approximate 300KB per photo
+            const estimatedBytes = totalItems * 300 * 1024;
+            const usedMB = Math.round((estimatedBytes / (1024 * 1024)) * 10) / 10;
+            const percentage = Math.round((usedMB / STORAGE_LIMIT_MB) * 1000) / 10;
+            setStorageInfo({ usedMB, percentage, isNearFull: percentage >= CLEANUP_THRESHOLD * 100 });
+        } catch {
+            setStorageInfo({ usedMB: 0, percentage: 0, isNearFull: false });
         }
-        // Also count root-level files
-        totalBytes += files.filter(f => f.metadata).reduce((sum, f) => sum + (f.metadata?.size || 0), 0);
-
-        const usedMB = Math.round((totalBytes / (1024 * 1024)) * 10) / 10;
-        const percentage = Math.round((usedMB / STORAGE_LIMIT_MB) * 1000) / 10;
-        setStorage({ usedMB, percentage, isNearFull: percentage >= CLEANUP_THRESHOLD * 100 });
     };
 
     useEffect(() => { fetchPhotos(); }, [fetchPhotos]);
@@ -79,30 +74,25 @@ const Photos = () => {
     // Auto-cleanup: delete oldest photos until below target
     const runCleanup = async () => {
         setCleanupRunning(true);
-        // Get all photos sorted oldest first
-        const { data: allPhotos } = await supabase
-            .from('job_photos')
-            .select('*')
-            .order('uploaded_at', { ascending: true });
+        const snap = await getDocs(
+            query(collection(db, 'jobPhotos'), orderBy('uploaded_at', 'asc'))
+        );
+        const allPhotos = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Photo[];
 
-        if (!allPhotos || allPhotos.length === 0) { setCleanupRunning(false); return; }
+        if (allPhotos.length === 0) { setCleanupRunning(false); return; }
 
         const targetBytes = CLEANUP_TARGET * STORAGE_LIMIT_MB * 1024 * 1024;
-        let currentBytes = storage.usedMB * 1024 * 1024;
+        let currentBytes = storageInfo.usedMB * 1024 * 1024;
         let deletedCount = 0;
 
         for (const photo of allPhotos) {
             if (currentBytes <= targetBytes) break;
-
-            // Delete from storage
-            const { error: storageErr } = await supabase.storage.from('job-photos').remove([photo.file_path]);
-            if (!storageErr) {
-                // Delete from DB
-                await supabase.from('job_photos').delete().eq('id', photo.id);
-                // Estimate ~300KB per photo for the counter (we don't have exact sizes here)
+            try {
+                await deleteObject(ref(storage, `job-photos/${photo.file_path}`));
+                await deleteDoc(doc(db, 'jobPhotos', photo.id));
                 currentBytes -= 300 * 1024;
                 deletedCount++;
-            }
+            } catch { /* skip if file already deleted */ }
         }
 
         setCleanupRunning(false);
@@ -112,14 +102,17 @@ const Photos = () => {
         }
     };
 
+
     // Delete single photo
     const handleDelete = async (photo: Photo, e?: React.MouseEvent) => {
         e?.stopPropagation();
         if (!confirm('Delete this photo permanently?')) return;
         setDeleting(photo.id);
 
-        await supabase.storage.from('job-photos').remove([photo.file_path]);
-        await supabase.from('job_photos').delete().eq('id', photo.id);
+        try {
+            await deleteObject(ref(storage, `job-photos/${photo.file_path}`));
+        } catch { /* file may already be gone */ }
+        await deleteDoc(doc(db, 'jobPhotos', photo.id));
 
         setDeleting(null);
         if (viewPhoto?.id === photo.id) setViewPhoto(null);
@@ -131,33 +124,29 @@ const Photos = () => {
         if (!user) return;
         setUploading(true);
 
-        // Check if cleanup needed before upload
-        if (storage.percentage >= CLEANUP_THRESHOLD * 100) {
+        if (storageInfo.percentage >= CLEANUP_THRESHOLD * 100) {
             await runCleanup();
         }
 
         const resized = await resizeImage(file, 1200);
         const ext = file.name.split('.').pop() || 'jpg';
-        const filePath = `${user.id}/${Date.now()}.${ext}`;
+        const filePath = `${user.uid}/${Date.now()}.${ext}`;
 
-        const { error: uploadError } = await supabase.storage
-            .from('job-photos')
-            .upload(filePath, resized, { contentType: file.type });
+        try {
+            const storageRef = ref(storage, `job-photos/${filePath}`);
+            await uploadBytes(storageRef, resized, { contentType: file.type });
+            const publicUrl = await getDownloadURL(storageRef);
 
-        if (uploadError) {
-            alert(`Upload failed: ${uploadError.message}`);
-            setUploading(false);
-            return;
+            await addDoc(collection(db, 'jobPhotos'), {
+                file_path: filePath,
+                file_url: publicUrl,
+                uploaded_by: user.uid,
+                description: description || null,
+                uploaded_at: new Date().toISOString(),
+            });
+        } catch (err) {
+            alert(`Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
-
-        const { data: { publicUrl } } = supabase.storage.from('job-photos').getPublicUrl(filePath);
-
-        await supabase.from('job_photos').insert({
-            file_path: filePath,
-            file_url: publicUrl,
-            uploaded_by: user.id,
-            description: description || null,
-        });
 
         setDescription('');
         setUploading(false);
@@ -176,7 +165,7 @@ const Photos = () => {
         if (file && file.type.startsWith('image/')) handleUpload(file);
     };
 
-    const storageBarColor = storage.percentage >= 90 ? 'bg-destructive' : storage.percentage >= 70 ? 'bg-warning' : 'bg-primary';
+    const storageBarColor = storageInfo.percentage >= 90 ? 'bg-destructive' : storageInfo.percentage >= 70 ? 'bg-warning' : 'bg-primary';
 
     return (
         <div className="min-h-screen bg-background">
@@ -194,24 +183,24 @@ const Photos = () => {
                         <div className="flex items-center gap-2">
                             <HardDrive size={16} className="text-foreground/50" />
                             <span className="text-xs text-foreground/60 font-medium">
-                                Storage: {storage.usedMB} MB / {STORAGE_LIMIT_MB} MB
+                                Storage: {storageInfo.usedMB} MB / {STORAGE_LIMIT_MB} MB
                             </span>
                         </div>
                         <div className="flex items-center gap-2">
-                            {storage.isNearFull && (
+                            {storageInfo.isNearFull && (
                                 <span className="flex items-center gap-1 text-[10px] text-warning font-medium">
                                     <AlertTriangle size={12} /> Near capacity
                                 </span>
                             )}
-                            <span className="text-xs font-mono text-foreground/40">{storage.percentage}%</span>
+                            <span className="text-xs font-mono text-foreground/40">{storageInfo.percentage}%</span>
                         </div>
                     </div>
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
                         <div className={`h-full rounded-full transition-all duration-500 ${storageBarColor}`}
-                            style={{ width: `${Math.min(storage.percentage, 100)}%` }}
+                            style={{ width: `${Math.min(storageInfo.percentage, 100)}%` }}
                         />
                     </div>
-                    {storage.isNearFull && (
+                    {storageInfo.isNearFull && (
                         <div className="flex items-center justify-between mt-3">
                             <p className="text-[11px] text-foreground/40">
                                 Oldest photos will be auto-deleted on next upload

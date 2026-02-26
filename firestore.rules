@@ -1,0 +1,75 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Profiles: users can read/write their own profile
+    match /profiles/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Allow read for admin functions
+      allow read: if request.auth != null;
+    }
+
+    // Conversation transcripts: users can read/write their own
+    match /conversationTranscripts/{docId} {
+      allow read, write: if request.auth != null 
+        && resource.data.user_id == request.auth.uid;
+      allow create: if request.auth != null 
+        && request.resource.data.user_id == request.auth.uid;
+    }
+
+    // Voice calls: authenticated users can read
+    match /voiceCalls/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Server-side only
+    }
+
+    // Jobs, work hours, mileage: authenticated users
+    match /jobs/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /workHours/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /mileageLogs/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Inventory: authenticated users
+    match /vanInventory/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Quotes, invoices, CP12 records: authenticated users
+    match /quotes/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /invoices/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /cp12Records/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Photos: authenticated users
+    match /jobPhotos/{docId} {
+      allow read, write: if request.auth != null;
+    }
+    match /photoAnalyses/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Server-side only (Cloud Functions)
+    }
+
+    // Shared documents: public read (for customer links)
+    match /sharedDocuments/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Regulation chunks: server-side only
+    match /regulationChunks/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}

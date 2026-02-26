@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Loader2, Save, CheckCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 
 interface ProfileData {
@@ -21,13 +22,15 @@ const Profile = () => {
     useEffect(() => {
         if (!user) return;
         (async () => {
-            const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-            if (data) {
-                setProfile({ display_name: data.display_name, phone: data.phone || '', role: data.role });
+            const profileRef = doc(db, 'profiles', user.uid);
+            const snap = await getDoc(profileRef);
+            if (snap.exists()) {
+                const data = snap.data();
+                setProfile({ display_name: data.display_name || '', phone: data.phone || '', role: data.role || 'engineer' });
             } else {
                 // Auto-create profile
                 const name = user.email?.split('@')[0] || 'Engineer';
-                await supabase.from('profiles').insert({ id: user.id, display_name: name });
+                await setDoc(profileRef, { display_name: name, email: user.email, role: 'engineer', created_at: new Date().toISOString() });
                 setProfile({ display_name: name, phone: '', role: 'engineer' });
             }
             setLoading(false);
@@ -37,10 +40,10 @@ const Profile = () => {
     const handleSave = async () => {
         if (!user) return;
         setSaving(true);
-        await supabase.from('profiles').update({
+        await updateDoc(doc(db, 'profiles', user.uid), {
             display_name: profile.display_name,
             phone: profile.phone || null,
-        }).eq('id', user.id);
+        });
         setSaving(false);
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);

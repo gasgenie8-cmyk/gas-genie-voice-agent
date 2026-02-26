@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Menu, X, Flame, LogOut, MessageSquare, Camera, User } from 'lucide-react';
+import { Menu, X, Flame, LogOut, MessageSquare, Camera, User, LayoutDashboard, Wrench, BookOpen } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const Navbar = () => {
@@ -16,8 +16,11 @@ const Navbar = () => {
 
     const authLinks = [
         { to: '/voice', label: 'Talk to Genie', primary: true },
+        { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { to: '/diagnose', label: 'Diagnose', icon: Wrench },
         { to: '/history', label: 'History', icon: MessageSquare },
         { to: '/photos', label: 'Photos', icon: Camera },
+        { to: '/reference', label: 'Reference', icon: BookOpen },
         { to: '/profile', label: 'Profile', icon: User },
     ];
 

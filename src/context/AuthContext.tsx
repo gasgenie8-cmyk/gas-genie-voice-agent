@@ -1,10 +1,16 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
-import type { User, Session } from '@supabase/supabase-js';
+import { auth, db } from '../lib/firebase';
+import {
+    onAuthStateChanged,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signOut as firebaseSignOut,
+    type User,
+} from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface AuthContextType {
     user: User | null;
-    session: Session | null;
     loading: boolean;
     signUp: (email: string, password: string) => Promise<{ error: string | null }>;
     signIn: (email: string, password: string) => Promise<{ error: string | null }>;
@@ -15,43 +21,55 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
-    const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Check active session on mount
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
-            setUser(session?.user ?? null);
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            setUser(firebaseUser);
+            if (firebaseUser) {
+                // Ensure a profile document exists in Firestore
+                const profileRef = doc(db, 'profiles', firebaseUser.uid);
+                const profileSnap = await getDoc(profileRef);
+                if (!profileSnap.exists()) {
+                    await setDoc(profileRef, {
+                        display_name: firebaseUser.email?.split('@')[0] ?? '',
+                        email: firebaseUser.email ?? '',
+                        created_at: new Date().toISOString(),
+                    });
+                }
+            }
             setLoading(false);
         });
 
-        // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setSession(session);
-            setUser(session?.user ?? null);
-            setLoading(false);
-        });
-
-        return () => subscription.unsubscribe();
+        return () => unsubscribe();
     }, []);
 
     const signUp = useCallback(async (email: string, password: string) => {
-        const { error } = await supabase.auth.signUp({ email, password });
-        return { error: error?.message ?? null };
+        try {
+            await createUserWithEmailAndPassword(auth, email, password);
+            return { error: null };
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Sign up failed';
+            return { error: message };
+        }
     }, []);
 
     const signIn = useCallback(async (email: string, password: string) => {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        return { error: error?.message ?? null };
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+            return { error: null };
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Sign in failed';
+            return { error: message };
+        }
     }, []);
 
-    const signOut = useCallback(async () => {
-        await supabase.auth.signOut();
+    const signOutFn = useCallback(async () => {
+        await firebaseSignOut(auth);
     }, []);
 
     return (
-        <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>
+        <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut: signOutFn }}>
             {children}
         </AuthContext.Provider>
     );
